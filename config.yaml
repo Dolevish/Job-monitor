@@ -30,6 +30,7 @@ filters:
   title_adjacent:
     - machine learning|deep learning|data scien|algorithm|computer vision
     - אלגורית|למידת מכונה|ראייה ממוחשבת
+    - \bcad\b|emulation
 
   # Any of these in the title = not for you.
   title_exclude:

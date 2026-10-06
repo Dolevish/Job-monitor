@@ -104,15 +104,16 @@ def _year_spans(line: str) -> list[tuple[int, int | None]]:
 def required_years(text: str) -> tuple[int, int | None] | None:
     """Largest mandatory lower bound of years of experience, with its upper bound if a range."""
     best: tuple[int, int | None] | None = None
-    optional_section = False
+    optional_section, in_requirements = False, False
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
         if _is_heading(line):
             optional_section = bool(OPTIONAL_HEADING.search(line))
+            in_requirements = bool(REQ_HEADING.search(line))
             continue
-        if optional_section or not EXP_WORD.search(line):
+        if optional_section or not (EXP_WORD.search(line) or in_requirements):
             continue
         if OPTIONAL_LINE.search(line) or COMPANY_LINE.search(line):
             continue

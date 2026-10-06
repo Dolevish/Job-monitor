@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import html
+from collections import Counter
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +17,7 @@ from dataclasses import dataclass, field
 import yaml
 
 from . import detect as detector
+from . import coverage
 from .adapters import ADAPTERS, source_key
 from .filters import Filters
 from .http import Http
@@ -43,6 +45,7 @@ class Result:
     seconds: float = 0.0
     fetched: int = 0
     detail_errors: list[str] = field(default_factory=list)
+    reasons: Counter = field(default_factory=Counter)
 
 
 def plan(c: dict, store: Store) -> tuple[str, tuple[str, str] | None]:
@@ -52,7 +55,7 @@ def plan(c: dict, store: Store) -> tuple[str, tuple[str, str] | None]:
     if ats and board and not needs_lookup:
         return "ready", (ats, board)
     if not needs_lookup:
-        return "skip", None          # "boards" / "custom": phase 2
+        return "skip", None          # no resolved source; reported as unavailable
     target = board if ats == "comeet" else (c.get("careers") or c.get("domain"))
     if not target or target == "TBD":
         return "skip", None
@@ -75,14 +78,18 @@ def run_detection(c: dict, http: Http) -> tuple[tuple[str, str] | None, str]:
         return None, (f"{type(e).__name__}: {e}; " + "; ".join(trace))[:400]
 
 
-def process(feed: Feed, http: Http, flt: Filters, known: set[str]) -> Result:
+def process(feed: Feed, http: Http, flt: Filters, known: set[str], check_only: bool = False) -> Result:
     t0, res = time.time(), Result(feed)
     fetch, details = ADAPTERS[feed.ats]
     try:
         jobs = fetch(http, feed.board, feed.company)
         res.fetched = len(jobs)
+        if check_only:
+            res.seconds = time.time() - t0
+            return res
         for job in jobs:
             if job.job_id in known:
+                res.reasons["known"] += 1
                 continue
             if flt.is_candidate(job):
                 if job.description is None and details:
@@ -92,7 +99,12 @@ def process(feed: Feed, http: Http, flt: Filters, known: set[str]) -> Result:
                         # Leave this ID unseen: retry the description next run, before classifying.
                         res.detail_errors.append(f"{job.title[:70]}: {type(e).__name__}: {e}"[:200])
                         continue
+                if not job.description or not job.description.strip():
+                    res.detail_errors.append(f"{job.title[:70]}: full description missing")
+                    continue
                 res.candidates.add(job.key)
+            else:
+                res.reasons["title" if not flt.title_ok(job.title) else "location"] += 1
             res.jobs.append(job)
     except Exception as e:
         res.error = f"{type(e).__name__}: {e}"[:400]
@@ -104,13 +116,16 @@ def process(feed: Feed, http: Http, flt: Filters, known: set[str]) -> Result:
 def run(args) -> int:
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
     companies = yaml.safe_load(open(args.companies, encoding="utf-8"))["companies"]
-    store, tg = Store(args.db, snapshot=args.dry_run), Telegram(dry_run=args.dry_run)
+    check_only = getattr(args, "check_sources", False)
+    dry = args.dry_run or check_only
+    store, tg = Store(args.db, snapshot=dry), Telegram(dry_run=dry)
     flt = Filters(cfg.get("filters", {}))
     rcfg = cfg.get("run", {})
 
     # 1) Which feeds to poll this run (detecting unknown ATSs in parallel, cached in the DB).
     feeds: dict[str, Feed] = {}
     detect_report: list[str] = []
+    notes: dict[str, str] = {}
     skipped: list[str] = []
     chosen = [c for c in companies if not args.only or args.only.lower() in c["name"].lower()]
     plans = {c["name"]: plan(c, store) for c in chosen}
@@ -119,16 +134,20 @@ def run(args) -> int:
         with ThreadPoolExecutor(max_workers=int(rcfg.get("workers", 8))) as ex:   # one session per thread
             found_all = list(ex.map(lambda c: run_detection(c, Http(timeout=15, retries=2)), pending))
         for c, (found, note) in zip(pending, found_all):
+            notes[c["name"]] = note
             store.save_detection(c["name"], *(found or (None, None)), note=note)
             plans[c["name"]] = ("ready", found) if found else ("skip", None)
             if found:
-                ok = "✅" if found[0] in ADAPTERS else "🕓 (adapter בשלב 2)"
+                ok = "✅" if found[0] in ADAPTERS else "❌ (adapter missing)"
                 detect_report.append(f"• {c['name']} → {found[0]} {ok}")
             else:
                 detect_report.append(f"• {c['name']} → ❌ לא זוהה  [{note}]")
     for c in chosen:
         state, found = plans[c["name"]]
         if state != "ready" or not found:
+            cached = store.detection(c["name"])
+            if cached and not cached[2]:
+                notes.setdefault(c["name"], "ATS detection failed; retry after cache TTL")
             skipped.append(c["name"])
             continue
         ats, board = found
@@ -140,16 +159,23 @@ def run(args) -> int:
     store.commit()
     if detect_report:
         print("ATS detection:\n" + "\n".join(detect_report))
-        tg.send("🔎 <b>זיהוי מערכות גיוס</b>\n" + "\n".join(r.split("  [")[0] for r in detect_report))
+        if not check_only:
+            tg.send("🔎 <b>זיהוי מערכות גיוס</b>\n" + "\n".join(r.split("  [")[0] for r in detect_report))
 
     # 2) Poll all feeds in parallel (network-bound).
     known = {k: store.known_ids(k) for k in feeds}
     baseline = {k: not store.source_seen(k) for k in feeds}
     results: list[Result] = []
     with ThreadPoolExecutor(max_workers=int(rcfg.get("workers", 8))) as ex:
-        futs = [ex.submit(process, f, Http(), flt, known[k]) for k, f in feeds.items()]
+        futs = [ex.submit(process, f, Http(), flt, known[k], check_only) for k, f in feeds.items()]
         for fut in as_completed(futs):
             results.append(fut.result())
+
+    coverage_data = coverage.report(chosen, plans, results, notes)
+    if check_only:
+        coverage.output(coverage_data, getattr(args, "coverage_json", None))
+        store.close()
+        return int(any(coverage_data[k] for k in ("failed_entries", "skipped")))
 
     # 3) Classify and store. Messages are queued in the DB, then sent in step 4.
     baseline_hits, baseline_total, baseline_done = 0, 0, 0
@@ -174,6 +200,7 @@ def run(args) -> int:
                 store.add_job(job, "skip")
                 continue
             v = flt.classify(job)
+            r.reasons[v.status + ": " + v.reason] += 1
             msg = None
             if baseline[k]:
                 if v.status == "match":
@@ -201,6 +228,8 @@ def run(args) -> int:
         if not r.fetched and (baseline[k] or previous_count or empty_runs == 3):
             print(f"    WARNING empty feed (x{empty_runs}): verify board/endpoint; "
                   "an HTTP success does not establish that no jobs are open")
+        if args.verbose and r.reasons:
+            print("    filters: " + ", ".join(f"{reason}={n}" for reason, n in sorted(r.reasons.items())))
         for error in r.detail_errors:
             print(f"    RETRY details next run: {error}")
 
@@ -222,14 +251,11 @@ def run(args) -> int:
     if queue:
         mode = "previewed" if args.dry_run else "sent"
         print(f"telegram: {mode} {sent}/{len(queue)} queued messages")
-    polled_entries = sum(state == "ready" and bool(found) and found[0] in ADAPTERS
-                         for state, found in plans.values())
-    print(f"coverage: configured={len(chosen)} polled_entries={polled_entries} "
-          f"feeds={len(feeds)} skipped={len(skipped)}")
+    coverage.output(coverage_data, getattr(args, "coverage_json", None))
     if args.dry_run:
         print("dry-run: preview only; persistent state and delivery flags are unchanged")
     if skipped and args.verbose:
-        print("not polled (phase 2 / undetected):", ", ".join(skipped))
+        print("not polled (source unavailable):", ", ".join(skipped))
     store.close()
     return 1 if tg.failed else 0
 
@@ -241,5 +267,7 @@ def main() -> None:
     ap.add_argument("--db", default="state/jobs.db")
     ap.add_argument("--only", help="poll only companies whose name contains this text")
     ap.add_argument("--dry-run", action="store_true", help="print messages instead of sending")
+    ap.add_argument("--check-sources", action="store_true", help="check complete listings only; no Telegram or state changes")
+    ap.add_argument("--coverage-json", help="write per-company coverage JSON to this file")
     ap.add_argument("-v", "--verbose", action="store_true")
     raise SystemExit(run(ap.parse_args()))

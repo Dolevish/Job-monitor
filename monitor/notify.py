@@ -86,6 +86,8 @@ def job_message(job: Job, v: Verdict) -> str:
                  r"משרה\s+זמנית|לתקופה\s+קצובה", job.title + "\n" + (job.description or "")[:500], re.I):
         meta.append("📅 משרה זמנית / לתקופה קצובה")
     lines.append(" | ".join(m for m in meta if m))
+    if job.extra.get("secondary_source"):
+        lines.append("מקור חלופי: " + _e(job.extra["secondary_source"]))
     if v.requirements:
         lines.append("\n<b>דרישות עיקריות:</b>")
         lines += [f"• {_e(r)}" for r in v.requirements]

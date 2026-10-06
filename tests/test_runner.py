@@ -301,3 +301,15 @@ def test_full_previous_schema_migrates_without_losing_delivery_history(tmp_path)
     st.mark_ok("s", 3)
     assert st.source_counts("s") == (3, 0)
     st.close()
+
+
+def test_source_check_writes_coverage_without_notifications_or_database(tmp_path, monkeypatch):
+    import json
+    args, sent = setup(tmp_path, monkeypatch)
+    args.check_sources = True
+    args.coverage_json = str(tmp_path / 'coverage.json')
+    STATE.update(fail=False, jobs=[('1', 'Firmware Engineer', '• C++')])
+    assert runner.run(args) == 1  # fixture's Elbit entry has no configured source
+    assert sent == [] and not (tmp_path / 'jobs.db').exists()
+    data = json.loads((tmp_path / 'coverage.json').read_text())
+    assert data['successful_entries'] == 1 and data['skipped'] == 1
