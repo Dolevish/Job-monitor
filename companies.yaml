@@ -1,0 +1,100 @@
+# Job monitor - target companies | mapped 2026-10-06
+#
+# status:
+#   verified  - board taken from the open ATS inventory (kalil0321/ats-scrapers) or a known live URL
+#   signature - job URLs carry Comeet position ids (e.g. 98.A50); uid+token are read from the careers page at runtime
+#   detect    - ATS unknown yet; detector reads the careers page on first run and fills ats/board
+#   custom    - own site, needs a dedicated adapter (phase 2); also caught via boards meanwhile
+#   boards    - staffing/integrators: no own feed; caught from Drushim/AllJobs/freehire by company name
+#
+# endpoints (public, no API key):
+#   workday         POST https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
+#   greenhouse      GET  https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true
+#   lever           GET  https://api.(eu.)lever.co/v0/postings/{slug}?mode=json   (board "eu:<slug>" = EU)
+#   smartrecruiters GET  https://api.smartrecruiters.com/v1/companies/{board}/postings
+#   oracle_hcm      GET  https://{host}.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions
+#   eightfold       GET  https://{board}.eightfold.ai/api/apply/v2/jobs
+#   comeet          GET  https://www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}&details=true
+#   amazon          GET  https://www.amazon.jobs/en/search.json?normalized_country_code[]={board}
+#   apple/google: company-site adapters (phase 2)
+
+companies:
+  # --- chips / embedded / defense ---
+  - {name: NVIDIA,             group: chips,   ats: workday,    board: nvidia/wd5/NVIDIAExternalCareerSite, status: verified}
+  - {name: Intel,              group: chips,   ats: workday,    board: intel/wd1/External,               status: verified}
+  - {name: Marvell,            group: chips,   ats: workday,    board: marvell/wd1/MarvellCareers,       status: verified}
+  - {name: Broadcom,           group: chips,   ats: workday,    board: broadcom/wd1/External_Career,     status: verified}
+  - {name: Qualcomm,           group: chips,   ats: workday,    board: qualcomm/wd12/External,           status: verified, note: "inventory also lists qualcomm.eightfold.ai"}
+  - {name: KLA,                group: chips,   ats: workday,    board: kla/wd1/Search,                   status: verified, note: "dedicated Israel site exists: kla/wd1/Israel"}
+  - {name: Applied Materials,  group: chips,   ats: workday,    board: amat/wd1/External,                status: verified}
+  - {name: Texas Instruments,  group: chips,   ats: oracle_hcm, board: edbz/CX_1,                        status: verified}
+  - {name: SanDisk,            group: chips,   ats: smartrecruiters, board: sandisk,                     status: verified}
+  - {name: Astera Labs,        group: chips,   ats: greenhouse, board: asteralabs,                       status: verified}
+  - {name: Astera Labs (Early Career), group: chips, ats: greenhouse, board: asteraearlycareer2026, status: verified}
+  - {name: Annapurna Labs,     group: chips,   ats: amazon,     board: ISR,                               status: verified}
+  - {name: Amazon,             group: chips,   ats: amazon,     board: ISR,                               status: verified, note: "same feed as Annapurna"}
+  - {name: Apple,              group: chips,   ats: apple,      board: "jobs.apple.com location=Israel", status: verified}
+  - {name: Google,             group: chips,   ats: google,     board: "careers.google.com location=Israel", status: verified}
+  - {name: Mobileye,           group: chips,   ats: lever,   board: "eu:mobileye",                     status: verified}
+  - {name: Hailo,              group: chips,   ats: comeet,     board: "https://hailo.ai/company-overview/careers", status: signature}
+  - {name: Xsight Labs,        group: chips,   domain: xsightlabs.com,  status: detect}
+  - {name: NextSilicon,        group: chips,   domain: nextsilicon.com, status: detect}
+  - {name: Ceva,               group: chips,   domain: ceva-ip.com,     status: detect, note: "inventory CEVA/Cornerstone is probably CEVA Logistics - ignore"}
+  - {name: Nova,               group: chips,   domain: novami.com,      status: detect}
+  - {name: Nuvoton,            group: chips,   domain: nuvoton.com,     status: detect, note: "Israel site to confirm"}
+  - {name: Sony Semiconductor Israel, group: chips, domain: TBD,       status: detect, note: "domain to confirm"}
+  - {name: Samsung Israel R&D, group: chips,   domain: TBD,             status: detect, note: "inventory has only US Samsung Semiconductor"}
+  - {name: SolarEdge,          group: embedded, domain: solaredge.com,  status: detect, note: "careers site is JS-only"}
+  - {name: Wiliot,             group: embedded, domain: wiliot.com,     status: detect, note: "already indexed by freehire"}
+  - {name: Valens,             group: embedded, domain: valens.com,     status: detect}
+  - {name: Arbe,               group: embedded, domain: arberobotics.com, status: detect}
+  - {name: Innoviz,            group: embedded, domain: innoviz.tech,   status: detect}
+  - {name: Cardo,              group: embedded, domain: cardosystems.com, status: detect}
+  - {name: Maytronics,         group: embedded, domain: maytronics.com, status: detect}
+  - {name: Unitronics,         group: embedded, domain: unitronicsplc.com, status: detect}
+  - {name: XTEND,              group: embedded, domain: TBD,            status: detect, note: "domain to confirm"}
+  - {name: Mentee Robotics,    group: embedded, domain: menteebot.com,  status: detect}
+  - {name: ACM,                group: embedded, status: boards, note: "posts on Drushim (job 37091176)"}
+  - {name: Elbit Systems,      group: defense, status: custom, note: "own site + heavy Drushim presence"}
+  - {name: IAI,                group: defense, status: custom, note: "jobs.iai.co.il is JS-only"}
+  - {name: Rafael,             group: defense, status: custom, note: "career.rafael.co.il blocks bots"}
+  - {name: DRS RADA,           group: defense, domain: careers.leonardodrs.com, status: detect, note: "Leonardo DRS on Phenom; Israel roles may be on boards only"}
+
+  # --- networking / network security ---
+  - {name: Cisco,              group: network, ats: workday,    board: cisco/wd5/Cisco_Careers,          status: verified}
+  - {name: Palo Alto Networks, group: network, ats: workday,    board: paloaltonetworks/wd5/PANWExternalCareers, status: verified}
+  - {name: Cato Networks,      group: network, ats: greenhouse, board: catonetworks,                     status: verified}
+  - {name: DriveNets,          group: network, ats: comeet,     board: "https://drivenets.com/careers",  status: signature}
+  - {name: Check Point,        group: network, status: custom,  note: "careers.checkpoint.com uses jobOrderID pages, 403 to bots"}
+  - {name: Ceragon,            group: network, domain: ceragon.com,   status: detect}
+  - {name: RAD,                group: network, domain: rad.com,       status: detect}
+  - {name: Allot,              group: network, domain: allot.com,     status: detect}
+  - {name: AudioCodes,         group: network, domain: audiocodes.com, status: detect}
+  - {name: Gilat,              group: network, domain: gilat.com,     status: detect}
+  - {name: Silicom,            group: network, domain: silicom-usa.com, status: detect}
+  - {name: Radware,            group: network, domain: radware.com,   status: detect}
+
+  # --- cloud / software ---
+  - {name: Microsoft,          group: software, ats: eightfold,  board: apply.careers.microsoft.com/microsoft.com, status: verified}
+  - {name: Oracle,             group: software, ats: oracle_hcm, board: eeho/CX_1,                       status: verified}
+  - {name: Nebius,             group: software, ats: greenhouse, board: nebius,                          status: verified}
+  - {name: Wix,                group: software, ats: smartrecruiters, board: Wix2,                       status: verified}
+  - {name: Teva,               group: other,    ats: successfactors, board: careers.teva,                status: verified}
+  - {name: CyberArk,           group: software, domain: cyberark.com,  status: detect}
+  - {name: ScaleOps,           group: software, domain: scaleops.com,  status: detect}
+  - {name: monday.com,         group: software, domain: monday.com,    status: detect}
+  - {name: HiBob,              group: software, domain: hibob.com,     status: detect, note: "inventory greenhouse board 'bob' - confirm it is HiBob"}
+
+  # --- staffing / integrators / consulting (boards only) ---
+  - {name: Matrix,             group: staffing, status: boards}
+  - {name: Ness Technologies,  group: staffing, status: boards}
+  - {name: ONE Technologies,   group: staffing, status: boards}
+  - {name: GAV Systems,        group: staffing, status: boards}
+  - {name: abra,               group: staffing, status: boards}
+  - {name: Commit,             group: staffing, status: boards}
+  - {name: QualityAI,          group: staffing, status: boards}
+  - {name: Aman Group,         group: staffing, status: boards}
+  - {name: G-STAT,             group: staffing, status: boards}
+  - {name: Experis,            group: staffing, status: boards}
+  - {name: Bynet,              group: staffing, status: boards}
+  - {name: Deloitte,           group: staffing, status: boards}

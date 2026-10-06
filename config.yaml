@@ -1,0 +1,53 @@
+# What counts as a fit. All patterns are case-insensitive regular expressions.
+
+filters:
+  # Reject when the mandatory experience is above this. A range like "1-2 years" is
+  # rejected too, unless the posting says graduates are welcome. "0-2"/"0-3" pass.
+  max_years: 1
+
+  # Relevant on their own (unless excluded below).
+  title_core:
+    - embedded
+    - firmware
+    - real[- ]?time|\brt\b
+    - \bbsp\b|kernel|device driver|\bdrivers?\b|low[- ]level|\brtos\b
+    - network(?:ing)?\s+(?:software|engineer|developer)|software.*network|networking
+    - data[- ]?path|\bsonic\b
+    - systems? software
+    - \bc\s*/\s*c\+\+|\bc\+\+
+    - משובצ|אמבדד|פירמוור|זמן אמת|מהנדס.{0,3}רשתות|תוכנה משובצת
+
+  # Relevant only together with a junior marker (e.g. "Junior Software Engineer").
+  title_general:
+    - software|developer|engineer|programmer
+    - מפתח|מתכנת|מהנדס
+  title_junior:
+    - junior|graduate|new grad|college grad|entry[- ]level|early career|associate
+    - ג'וניור|ג׳וניור|בוגר
+
+  # Any of these in the title = not for you.
+  title_exclude:
+    - senior|\bsr\.?\b|staff|principal|\blead\b|leader|manager|director|architect|head of|\bvp\b|chief|expert
+    - intern\b|internship|student|סטודנט
+    - \bqa\b|verification|validation|\btest\b|testing|tester|qa automation|test automation
+    - technician|טכנאי|help ?desk|\bnoc\b|it support|sysadmin|system administrator
+    - sales|marketing|recruit|product manager|program manager|project manager|customer|support engineer
+    - hardware|board design|layout|analog|\basic\b|vlsi|physical design|\bdv\b|\brtl\b|fpga|silicon
+    - בכיר|ראש צוות|מנהל
+
+  # A posting counts as Israel when its location matches one of these.
+  locations:
+    - israel|\bISR\b|ישראל
+    - tel[- ]aviv|haifa|yokneam|yoqneam|jerusalem|herzliya|ra'?anana|petah|petach|be'?er|beersheba
+    - hod hasharon|kfar saba|netanya|rehovot|caesarea|kiryat gat|modi'?in|ramat gan|airport city
+    - or yehuda|tel hai|mevo carmel|migdal ha|holon|rosh ha'?ayin|matam|yakum
+    - תל אביב|חיפה|יקנעם|ירושלים|הרצליה|רעננה|פתח תקו|באר שבע|הוד השרון|כפר סבא|נתניה|רחובות|קיסריה|מודיעין|רמת גן
+
+notify:
+  send_review: true     # also send fitting titles whose posting states no years ("לבדיקה")
+
+run:
+  workers: 8                 # feeds polled in parallel
+  failure_alert_after: 6     # Telegram warning after N consecutive failures (~3 hours)
+  max_messages: 20           # per run; the rest are summarized
+  baseline_max: 10           # first run of a feed: how many currently-open matches to show
