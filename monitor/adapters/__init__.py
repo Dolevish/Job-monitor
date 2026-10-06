@@ -2,7 +2,7 @@
 returns full descriptions."""
 from __future__ import annotations
 
-from . import comeet, simple, workday
+from . import comeet, eightfold, simple, workday
 
 ADAPTERS = {
     "workday": (workday.fetch, workday.details),
@@ -11,10 +11,11 @@ ADAPTERS = {
     "smartrecruiters": (simple.smartrecruiters_fetch, simple.smartrecruiters_details),
     "amazon": (simple.amazon_fetch, None),
     "comeet": (comeet.fetch, None),
+    "eightfold": (eightfold.fetch, eightfold.details),
 }
 
 # Known ATS we can detect but have no adapter for yet (phase 2).
-PLANNED = {"oracle_hcm", "eightfold", "successfactors", "apple", "google", "ashby",
+PLANNED = {"oracle_hcm", "successfactors", "apple", "google", "ashby",
            "workable", "bamboohr", "teamtailor", "recruitee", "breezy", "phenom"}
 
 

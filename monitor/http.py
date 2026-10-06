@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import html
 import re
+import random
 import time
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 
 import requests
 
@@ -11,6 +14,18 @@ UA = (
     "(KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 )
 RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
+def retry_delay(response, attempt: int) -> float:
+    value = response.headers.get("Retry-After", "")
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            delay = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            delay = 2 * 2 ** attempt + random.uniform(0, 1)
+    return min(30, max(0, delay))
 
 
 class Http:
@@ -30,13 +45,14 @@ class Http:
                 retry = r.status_code in RETRY_STATUS or (
                     r.status_code == 403 and "myworkdayjobs.com" in url)   # Workday rate-limits with 403
                 if retry and attempt < self.retries - 1:
-                    time.sleep(2 * 2 ** attempt)
+                    time.sleep(retry_delay(r, attempt))
                     continue
                 r.raise_for_status()
                 return r
             except (requests.ConnectionError, requests.Timeout) as e:
                 last = e
-                time.sleep(2 * 2 ** attempt)
+                if attempt < self.retries - 1:
+                    time.sleep(2 * 2 ** attempt + random.uniform(0, 1))
         raise last or RuntimeError(f"request failed: {url}")
 
     def get_json(self, url: str, params: dict | None = None):

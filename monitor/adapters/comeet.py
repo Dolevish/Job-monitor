@@ -6,23 +6,32 @@ Use resolve() to turn a careers-page URL into a board.
 """
 from __future__ import annotations
 
+import html
 import re
+from urllib.parse import parse_qs
 
 from ..http import html_to_text
 from ..models import Job
 
 UID = r"[0-9A-Za-z]{2}\.[0-9A-Za-z]{3}"
-TOKEN_RE = re.compile(r"[\"']token[\"']\s*:\s*[\"']([A-Za-z0-9]{20,})[\"']")
-UID_RE = re.compile(rf"[\"']company[-_]?uid[\"']\s*:\s*[\"']({UID})[\"']", re.I)
-API_RE = re.compile(rf"careers-api/2\.0/company/({UID})/positions\?token=([A-Za-z0-9]{{20,}})")
-HOSTED_RE = re.compile(rf"comeet\.com?/jobs/([\w.-]+)/({UID})\b")
+TOKEN_RE = re.compile(r"(?<![\w-])[\"']?(?:data-|comeet_)?token[\"']?\s*[:=]\s*[\"']([A-Za-z0-9_-]{20,})[\"']", re.I)
+UID_RE = re.compile(rf"(?<![\w-])[\"']?(?:(?:data-)?company[-_]?uid|comeet_uid)[\"']?\s*[:=]\s*[\"']({UID})[\"']", re.I)
+API_RE = re.compile(rf"careers-api/2\.0/company/({UID})/positions\?([^\s\"'<>]+)")
+HOSTED_RE = re.compile(rf"comeet\.com?/jobs/([\w.-]+)/({UID})\b", re.I)
+
+
+def normalize(page: str) -> str:
+    """Handle HTML entities and URL/quote escaping in serialized widget settings."""
+    return html.unescape(page).replace(r"\/", "/").replace(r'\"', '"').replace(r"\'", "'")
 
 
 def board_from_html(page: str) -> tuple[str | None, str | None]:
     """Return (board, hosted_url). board is "uid|token" if both are on the page."""
-    m = API_RE.search(page)
-    if m:
-        return f"{m.group(1)}|{m.group(2)}", None
+    page = normalize(page)
+    for m in API_RE.finditer(page):
+        token = parse_qs(m.group(2)).get("token", [""])[0]
+        if re.fullmatch(r"[A-Za-z0-9_-]{20,}", token):
+            return f"{m.group(1)}|{token}", None
     tok, uid = TOKEN_RE.search(page), UID_RE.search(page)
     if tok and uid:
         return f"{uid.group(1)}|{tok.group(1)}", None
@@ -37,7 +46,7 @@ def resolve(http, url: str) -> str | None:
     board, hosted = board_from_html(page)
     if board or not hosted:
         return board
-    tok = TOKEN_RE.search(http.get_text(hosted))
+    tok = TOKEN_RE.search(normalize(http.get_text(hosted)))
     return f"{HOSTED_RE.search(hosted).group(2)}|{tok.group(1)}" if tok else None
 
 

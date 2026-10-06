@@ -37,6 +37,42 @@ GRAD = re.compile(
     r"ללא ניסיון|ללא נסיון|בוגר(?:ים|ות|/ת)?\s+טרי|בוגרי תואר|ג'וניור", re.I)
 BULLET = re.compile(r"^\s*(?:[•\-\*·▪●◦]|\d+[.)])\s*")
 AMBIGUOUS_LOC = re.compile(r"^\s*$|\d+\s+locations?", re.I)
+ADVANCED_DEGREE = re.compile(r"\bph\.?\s*d\.?\b|\bdoctor(?:ate|al)\b|\bm\.?\s*sc\.?\b|"
+                             r"\bm\.?\s*s\.?(?=\s+(?:degree|in)\b|\s*[/,])|"
+                             r"\bmaster(?:'s|’s|s)\b|\bmaster\s+(?:degree|of)\b|"
+                             r"דוקטורט|תואר\s+(?:שני|שלישי)", re.I)
+BACHELOR = re.compile(r"\bbachelor(?:'s|’s|s)?\b|\bb\.?\s*sc\.?\b|\bb\.?\s*s\.?\b|"
+                      r"\bb\.?\s*eng\.?\b|תואר\s+ראשון", re.I)
+MANDATORY = re.compile(r"\brequired\b|\bmust\b|\bminimum\b|\bmandatory\b|חובה|נדרש", re.I)
+
+
+def _bachelor_alternative(line: str) -> bool:
+    degree, bachelor = ADVANCED_DEGREE.search(line), BACHELOR.search(line)
+    if not degree or not bachelor:
+        return False
+    a, b = sorted((degree, bachelor), key=lambda m: m.start())
+    between = line[a.end():b.start()]
+    return bool(re.search(r"\bor\b|או", between, re.I) or re.fullmatch(r"[\s.]*/[\s.]*", between))
+
+
+def required_advanced_degree(text: str) -> str | None:
+    """Reject mandatory postgraduate study, while allowing B.Sc. alternatives/preferences."""
+    in_req, optional = False, False
+    for raw in text.splitlines():
+        line = raw.strip()
+        degree = ADVANCED_DEGREE.search(line)
+        if not degree and _is_heading(line):
+            in_req = bool(REQ_HEADING.search(line))
+            optional = bool(OPTIONAL_HEADING.search(line))
+            continue
+        if not degree or optional or OPTIONAL_LINE.search(line):
+            continue
+        if _bachelor_alternative(line):
+            continue
+        bullet_degree = BULLET.match(line) and ADVANCED_DEGREE.match(BULLET.sub("", line))
+        if in_req or MANDATORY.search(line) or bullet_degree:
+            return degree.group().strip()
+    return None
 
 
 def _n(tok: str | None) -> int | None:
@@ -121,11 +157,16 @@ class Filters:
         self.general = rx(cfg.get("title_general", []))
         self.junior = rx(cfg.get("title_junior", []))
         self.exclude = rx(cfg.get("title_exclude", []))
+        self.adjacent = rx(cfg.get("title_adjacent", []))
+        self.bachelors_compatible = bool(cfg.get("bachelors_compatible", True))
         self.israel = rx(cfg.get("locations", ["israel"]))
 
     # --- cheap checks, before fetching the description ---
     def title_ok(self, title: str) -> bool:
         if self.exclude and self.exclude.search(title):
+            return False
+        if (self.bachelors_compatible and ADVANCED_DEGREE.search(title)
+                and not OPTIONAL_LINE.search(title) and not _bachelor_alternative(title)):
             return False
         if self.core and self.core.search(title):
             return True
@@ -156,15 +197,23 @@ class Filters:
         if not loc:
             return Verdict("reject", "location")
 
+        degree = required_advanced_degree(text) if self.bachelors_compatible else None
+        if degree:
+            return Verdict("reject", f"required degree: {degree}")
+
         grad = bool(GRAD.search(job.title) or GRAD.search(text)
                     or (self.junior and self.junior.search(job.title)))
         years = required_years(text)
         reqs = requirements(text)
+        adjacent = bool(self.adjacent and self.adjacent.search(job.title)
+                        and not (self.core and self.core.search(job.title)))
         if years is None:
-            return Verdict("match" if grad else "review", "no years stated", None, grad, reqs)
+            return Verdict("match" if grad and not adjacent else "review",
+                           "adjacent field" if adjacent else "no years stated", None, grad, reqs)
         lo, hi = years
         if lo > self.max_years:
             return Verdict("reject", f"{lo}+ years", years, grad, reqs)
         if hi is not None and hi > self.max_years and lo >= 1 and not grad:
             return Verdict("reject", f"{lo}-{hi} years", years, grad, reqs)
-        return Verdict("match", "years ok", years, grad, reqs)
+        return Verdict("review" if adjacent else "match", "adjacent field" if adjacent else "years ok",
+                       years, grad, reqs)

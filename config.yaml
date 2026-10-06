@@ -4,6 +4,7 @@ filters:
   # Reject when the mandatory experience is above this. A range like "1-2 years" is
   # rejected too, unless the posting says graduates are welcome. "0-2"/"0-3" pass.
   max_years: 1
+  bachelors_compatible: true  # reject mandatory M.Sc./PhD; allow optional degrees or B.Sc. alternatives
 
   # Relevant on their own (unless excluded below).
   title_core:
@@ -24,6 +25,11 @@ filters:
   title_junior:
     - junior|graduate|new grad|college grad|entry[- ]level|early career|associate
     - ג'וניור|ג׳וניור|בוגר
+
+  # Graduate roles outside the primary focus are sent for review, not as confirmed matches.
+  title_adjacent:
+    - machine learning|deep learning|data scien|algorithm|computer vision
+    - אלגורית|למידת מכונה|ראייה ממוחשבת
 
   # Any of these in the title = not for you.
   title_exclude:
@@ -49,5 +55,6 @@ notify:
 run:
   workers: 8                 # feeds polled in parallel
   failure_alert_after: 6     # Telegram warning after N consecutive failures (~3 hours)
-  max_messages: 20           # per run; the rest are summarized
+  max_messages: 20           # per run; the rest stay queued
   baseline_max: 10           # first run of a feed: how many currently-open matches to show
+  baseline_review_max: 5     # separate first-run allowance for jobs requiring review

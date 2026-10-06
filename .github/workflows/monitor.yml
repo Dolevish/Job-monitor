@@ -51,7 +51,7 @@ jobs:
         run: python -m monitor --db state/jobs.db -v ${{ inputs.dry_run && '--dry-run' || '' }}
 
       - name: Save state
-        if: always()
+        if: ${{ always() && !inputs.dry_run }}
         uses: actions/cache/save@v4
         with:
           path: state

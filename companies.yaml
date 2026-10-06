@@ -13,7 +13,7 @@
 #   lever           GET  https://api.(eu.)lever.co/v0/postings/{slug}?mode=json   (board "eu:<slug>" = EU)
 #   smartrecruiters GET  https://api.smartrecruiters.com/v1/companies/{board}/postings
 #   oracle_hcm      GET  https://{host}.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions
-#   eightfold       GET  https://{board}.eightfold.ai/api/apply/v2/jobs
+#   eightfold       GET  https://{host}/api/pcsx/search?domain={domain}&location=Israel
 #   comeet          GET  https://www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}&details=true
 #   amazon          GET  https://www.amazon.jobs/en/search.json?normalized_country_code[]={board}
 #   apple/google: company-site adapters (phase 2)
@@ -38,16 +38,16 @@ companies:
   - {name: Mobileye,           group: chips,   ats: lever,   board: "eu:mobileye",                     status: verified}
   - {name: Hailo,              group: chips,   ats: comeet,     board: "https://hailo.ai/company-overview/careers", status: signature}
   - {name: Xsight Labs,        group: chips,   domain: xsightlabs.com,  status: detect}
-  - {name: NextSilicon,        group: chips,   domain: nextsilicon.com, status: detect}
+  - {name: NextSilicon,        group: chips,   careers: "https://www.nextsilicon.com/careers", status: detect}
   - {name: Ceva,               group: chips,   domain: ceva-ip.com,     status: detect, note: "inventory CEVA/Cornerstone is probably CEVA Logistics - ignore"}
-  - {name: Nova,               group: chips,   domain: novami.com,      status: detect}
+  - {name: Nova,               group: chips,   careers: "https://www.novami.com/careers/working-at-nova/", status: detect}
   - {name: Nuvoton,            group: chips,   domain: nuvoton.com,     status: detect, note: "Israel site to confirm"}
   - {name: Sony Semiconductor Israel, group: chips, domain: TBD,       status: detect, note: "domain to confirm"}
   - {name: Samsung Israel R&D, group: chips,   domain: TBD,             status: detect, note: "inventory has only US Samsung Semiconductor"}
   - {name: SolarEdge,          group: embedded, domain: solaredge.com,  status: detect, note: "careers site is JS-only"}
   - {name: Wiliot,             group: embedded, domain: wiliot.com,     status: detect, note: "already indexed by freehire"}
   - {name: Valens,             group: embedded, domain: valens.com,     status: detect}
-  - {name: Arbe,               group: embedded, domain: arberobotics.com, status: detect}
+  - {name: Arbe,               group: embedded, careers: "https://arberobotics.com/career/", status: detect}
   - {name: Innoviz,            group: embedded, domain: innoviz.tech,   status: detect}
   - {name: Cardo,              group: embedded, domain: cardosystems.com, status: detect}
   - {name: Maytronics,         group: embedded, domain: maytronics.com, status: detect}
@@ -69,13 +69,13 @@ companies:
   - {name: Ceragon,            group: network, domain: ceragon.com,   status: detect}
   - {name: RAD,                group: network, domain: rad.com,       status: detect}
   - {name: Allot,              group: network, domain: allot.com,     status: detect}
-  - {name: AudioCodes,         group: network, domain: audiocodes.com, status: detect}
+  - {name: AudioCodes,         group: network, careers: "https://audiocodes.com/careers", status: detect}
   - {name: Gilat,              group: network, domain: gilat.com,     status: detect}
   - {name: Silicom,            group: network, domain: silicom-usa.com, status: detect}
   - {name: Radware,            group: network, domain: radware.com,   status: detect}
 
   # --- cloud / software ---
-  - {name: Microsoft,          group: software, ats: eightfold,  board: apply.careers.microsoft.com/microsoft.com, status: verified}
+  - {name: Microsoft,          group: software, ats: eightfold,  board: "apply.careers.microsoft.com|microsoft.com", status: verified}
   - {name: Oracle,             group: software, ats: oracle_hcm, board: eeho/CX_1,                       status: verified}
   - {name: Nebius,             group: software, ats: greenhouse, board: nebius,                          status: verified}
   - {name: Wix,                group: software, ats: smartrecruiters, board: Wix2,                       status: verified}
@@ -83,7 +83,7 @@ companies:
   - {name: CyberArk,           group: software, domain: cyberark.com,  status: detect}
   - {name: ScaleOps,           group: software, domain: scaleops.com,  status: detect}
   - {name: monday.com,         group: software, domain: monday.com,    status: detect}
-  - {name: HiBob,              group: software, domain: hibob.com,     status: detect, note: "inventory greenhouse board 'bob' - confirm it is HiBob"}
+  - {name: HiBob,              group: software, careers: "https://www.hibob.com/careers/", status: detect}
 
   # --- staffing / integrators / consulting (boards only) ---
   - {name: Matrix,             group: staffing, status: boards}

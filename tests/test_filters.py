@@ -1,4 +1,5 @@
 import yaml
+import pytest
 
 from monitor.filters import Filters, required_years, requirements
 from monitor.models import Job
@@ -74,3 +75,39 @@ def test_requirements_section():
     text = ("About the role:\nBuild things.\nRequirements:\n• B.Sc. in EE/CS\n• Strong C\n"
             "• Linux\nAdvantages:\n• RTOS")
     assert requirements(text) == ["B.Sc. in EE/CS", "Strong C", "Linux"]
+
+
+@pytest.mark.parametrize("degree", ["PhD", "Ph.D.", "M.Sc.", "MSc", "Master's degree",
+                                   "Master of Science", "MS degree", "תואר שני", "דוקטורט"])
+def test_required_postgraduate_degree_rejected(degree):
+    v = F.classify(job("Junior Firmware Engineer", f"Requirements:\n• {degree} in EE is required"))
+    assert v.status == "reject" and v.reason.startswith("required degree")
+
+
+@pytest.mark.parametrize("desc", [
+    "Requirements:\n• B.Sc. or M.Sc. in EE",
+    "Requirements:\n• B.Sc./M.Sc. in EE",
+    "Requirements:\n• M.Sc. or B.Sc. in EE",
+    "Requirements:\n• B.Sc. in EE\nPreferred Qualifications:\n• PhD in EE",
+    "Requirements:\n• M.Sc. preferred",
+    "Requirements:\n• תואר שני יתרון",
+    "Responsibilities:\n• Work with PhD researchers",
+    "Requirements:\n• Knowledge of MS Office and master Linux tools",
+])
+def test_optional_degrees_and_bachelor_alternatives_allowed(desc):
+    assert F.classify(job("Junior Embedded Engineer", desc)).status == "match"
+
+
+def test_degree_titles_and_joint_requirements():
+    assert not F.title_ok("System Engineer – PhD Graduates")
+    assert F.title_ok("Graduate Firmware Engineer (B.Sc./M.Sc.)")
+    assert F.title_ok("Firmware Engineer (M.Sc. preferred)")
+    assert F.classify(job("Junior Firmware Engineer",
+                          "Requirements:\n• B.Sc. in EE/CS and M.Sc. required")).status == "reject"
+    assert F.classify(job("Junior Firmware Engineer", "• MSc in Electrical Engineering")).status == "reject"
+
+
+def test_adjacent_graduate_roles_require_review_without_weakening_experience_rules():
+    assert F.classify(job("Outstanding Graduate - Machine Learning Engineer", "• B.Sc.")).reason == "adjacent field"
+    assert F.classify(job("Graduate Algorithm Developer", "• 3 years of experience")).status == "reject"
+    assert F.classify(job("Junior Embedded Machine Learning Engineer", "• B.Sc.")).status == "match"
