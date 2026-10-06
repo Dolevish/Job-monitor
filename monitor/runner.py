@@ -50,7 +50,7 @@ def plan(c: dict, store: Store) -> tuple[str, tuple[str, str] | None]:
         return "ready", (ats, board)
     if not needs_lookup:
         return "skip", None          # "boards" / "custom": phase 2
-    target = board if ats == "comeet" else c.get("domain")
+    target = board if ats == "comeet" else (c.get("careers") or c.get("domain"))
     if not target or target == "TBD":
         return "skip", None
     cached = store.detection(c["name"])
@@ -62,15 +62,18 @@ def plan(c: dict, store: Store) -> tuple[str, tuple[str, str] | None]:
 def run_detection(c: dict, http: Http) -> tuple[tuple[str, str] | None, str]:
     """Network part of detection (thread-safe; no DB access)."""
     ats, board = c.get("ats"), c.get("board")
-    target = board if ats == "comeet" else c.get("domain")
+    target = board if ats == "comeet" else (c.get("careers") or c.get("domain"))
+    trace: list[str] = []
     try:
         if ats == "comeet":
             url = target if target.startswith("http") else f"https://{target}"
             b = comeet.resolve(http, url)
-            return (("comeet", b) if b else detector.detect(http, target)), ""
-        return detector.detect(http, target), ""
+            if b:
+                return ("comeet", b), ""
+        found = detector.detect(http, target, trace=trace)
+        return found, "" if found else "; ".join(trace)[:400]
     except Exception as e:
-        return None, f"{type(e).__name__}: {e}"[:200]
+        return None, (f"{type(e).__name__}: {e}; " + "; ".join(trace))[:400]
 
 
 def process(feed: Feed, http: Http, flt: Filters, known: set[str]) -> Result:
@@ -121,7 +124,7 @@ def run(args) -> int:
                 ok = "✅" if found[0] in ADAPTERS else "🕓 (adapter בשלב 2)"
                 detect_report.append(f"• {c['name']} → {found[0]} {ok}")
             else:
-                detect_report.append(f"• {c['name']} → ❌ לא זוהה")
+                detect_report.append(f"• {c['name']} → ❌ לא זוהה  [{note}]")
     for c in chosen:
         state, found = plans[c["name"]]
         if state != "ready" or not found:
@@ -135,7 +138,8 @@ def run(args) -> int:
         feeds.setdefault(key, Feed(ats, board, c["name"], key))
     store.commit()
     if detect_report:
-        tg.send("🔎 <b>זיהוי מערכות גיוס</b>\n" + "\n".join(detect_report))
+        print("ATS detection:\n" + "\n".join(detect_report))
+        tg.send("🔎 <b>זיהוי מערכות גיוס</b>\n" + "\n".join(r.split("  [")[0] for r in detect_report))
 
     # 2) Poll all feeds in parallel (network-bound).
     known = {k: store.known_ids(k) for k in feeds}
@@ -146,16 +150,16 @@ def run(args) -> int:
         for fut in as_completed(futs):
             results.append(fut.result())
 
-    # 3) Classify, store, notify.
-    to_send: list[str] = []
-    baseline_hits: list[str] = []
-    baseline_total, baseline_done = 0, 0
+    # 3) Classify and store. Messages are queued in the DB, then sent in step 4.
+    baseline_hits, baseline_total, baseline_done = 0, 0, 0
+    baseline_max = int(rcfg.get("baseline_max", 10))
     alert_after = int(rcfg.get("failure_alert_after", 6))
     send_review = bool(cfg.get("notify", {}).get("send_review", True))
     for r in sorted(results, key=lambda r: r.feed.company):
         k = r.feed.key
         if r.error:
             n = store.mark_failure(k, r.error)
+            print(f"{r.feed.company:28} {r.feed.ats:15} ERROR (x{n}) {r.error[:150]}")
             if n >= alert_after and store.should_alert(k):
                 tg.send(f"⚠️ המקור <b>{r.feed.company}</b> ({r.feed.ats}) נכשל {n} פעמים ברצף:\n"
                         f"<code>{r.error[:300]}</code>")
@@ -166,13 +170,17 @@ def run(args) -> int:
                 store.add_job(job, "skip")
                 continue
             v = flt.classify(job)
-            store.add_job(job, v.status, v.reason)
-            wanted = v.status == "match" or (v.status == "review" and send_review)
+            msg = None
             if baseline[k]:
                 if v.status == "match":
-                    baseline_hits.append(job_message(job, v))
-            elif wanted:
-                to_send.append(job_message(job, v))
+                    baseline_hits += 1
+                    if baseline_hits <= baseline_max:
+                        msg = job_message(job, v)
+            elif v.status == "match" or (v.status == "review" and send_review):
+                msg = job_message(job, v)
+            store.add_job(job, v.status, v.reason, msg)
+            if v.status != "reject":
+                print(f"    {v.status:6} {job.title[:70]}  ({v.reason})")
         if baseline[k]:
             baseline_total += len(r.jobs)
             baseline_done += 1
@@ -181,17 +189,21 @@ def run(args) -> int:
         print(f"{r.feed.company:28} {r.feed.ats:15} new={len(r.jobs):4} "
               f"cand={len(r.candidates):3} {r.seconds:5.1f}s{' [baseline]' if baseline[k] else ''}")
 
+    # 4) Send: baseline summary, then queued job messages (incl. ones a failed run left behind).
     if baseline_done:
         tg.send(f"✅ <b>קו בסיס נשמר</b>: {baseline_total} משרות מ-{baseline_done} מקורות.\n"
                 f"מעכשיו תקבל רק משרות שנפתחות מכאן והלאה."
-                + (f"\n\nמתוכן {len(baseline_hits)} פתוחות כרגע ומתאימות לך:" if baseline_hits else ""))
-        to_send = baseline_hits[: int(rcfg.get("baseline_max", 10))] + to_send
-
-    limit = int(rcfg.get("max_messages", 20))
-    for msg in to_send[:limit]:
-        tg.send(msg)
-    if len(to_send) > limit:
-        tg.send(f"…ועוד {len(to_send) - limit} משרות שלא נשלחו בריצה הזו.")
+                + (f"\n\nמתוכן {baseline_hits} פתוחות כרגע ומתאימות לך:" if baseline_hits else ""))
+    queue = store.pending()
+    sent = 0
+    for key, msg in queue[: int(rcfg.get("max_messages", 20))]:
+        if not tg.send(msg):
+            break
+        store.mark_notified(key)
+        sent += 1
+    store.commit()
+    if queue:
+        print(f"telegram: sent {sent}/{len(queue)} queued messages")
     if skipped and args.verbose:
         print("not polled (phase 2 / undetected):", ", ".join(skipped))
     store.close()

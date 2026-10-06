@@ -35,7 +35,9 @@ CAREER_LINK = re.compile(r"""href=["']([^"'#]+)["'][^>]*>(?:(?!</a>).){0,200}?""
                          r"""קריירה|משרות|דרושים|הצטרפו)""", re.I | re.S)
 CAREER_HREF = re.compile(r"""href=["']([^"'#]*(?:career|jobs|join-us|positions)[^"'#]*)["']""", re.I)
 POSITION_HREF = re.compile(rf"""href=["']([^"']*(?:id=|/){comeet.UID})(?=["'/?&])""")
-COMMON_PATHS = ["/careers", "/careers/", "/company/careers", "/about/careers", "/jobs", "/join-us"]
+COMMON_PATHS = ["/careers", "/careers/", "/career", "/company/careers", "/about/careers",
+                "/about-us/careers", "/en/careers", "/jobs", "/join-us", "/open-positions",
+                "/careers/open-positions"]
 
 
 def scan(page: str) -> tuple[str, str] | None:
@@ -67,8 +69,10 @@ def _candidates(base: str, page: str) -> list[str]:
     return out
 
 
-def detect(http, target: str, max_pages: int = 8) -> tuple[str, str] | None:
-    """target: a domain ("valens.com") or a full careers URL."""
+def detect(http, target: str, max_pages: int = 12, trace: list | None = None) -> tuple[str, str] | None:
+    """target: a domain ("valens.com") or a full careers URL.
+    trace (optional) collects "status url" lines explaining what was tried."""
+    trace = trace if trace is not None else []
     start = target if target.startswith("http") else f"https://{target}"
     queue, visited = [start], set()
     while queue and len(visited) < max_pages:
@@ -78,8 +82,12 @@ def detect(http, target: str, max_pages: int = 8) -> tuple[str, str] | None:
         visited.add(url)
         try:
             page = http.get_text(url)
-        except Exception:
+        except Exception as e:
+            code = getattr(getattr(e, "response", None), "status_code", None)
+            trace.append(f"{code or type(e).__name__} {url}")
             continue
+        hint = " comeet?" if "comeet" in page.lower() else ""
+        trace.append(f"ok {url}{hint}")
         found = scan(page)
         if found:
             return found
@@ -95,6 +103,22 @@ def detect(http, target: str, max_pages: int = 8) -> tuple[str, str] | None:
             queue.insert(0, urljoin(url, pos[0]))
         if url == start:
             queue += _candidates(url, page)
+    if not visited or all(not t.startswith("ok") for t in trace):
+        # the start URL itself failed: still try the common careers paths on the domain
+        for p in COMMON_PATHS[:4]:
+            u = urljoin(start, p)
+            if u in visited:
+                continue
+            try:
+                page = http.get_text(u)
+            except Exception as e:
+                code = getattr(getattr(e, "response", None), "status_code", None)
+                trace.append(f"{code or type(e).__name__} {u}")
+                continue
+            trace.append(f"ok {u}")
+            found = scan(page)
+            if found:
+                return found
     return None
 
 

@@ -18,7 +18,14 @@ def fake_fetch(http, board, company):
 def setup(tmp_path, monkeypatch):
     sent = []
     monkeypatch.setitem(runner.ADAPTERS, "fake", (fake_fetch, None))
-    monkeypatch.setattr(runner.Telegram, "send", lambda self, text: sent.append(text))
+
+    def fake_send(self, text):
+        if STATE.get("tg_down"):
+            return False
+        sent.append(text)
+        return True
+    monkeypatch.setattr(runner.Telegram, "send", fake_send)
+    STATE["tg_down"] = False
     comp = tmp_path / "companies.yaml"
     comp.write_text(yaml.safe_dump({"companies": [
         {"name": "Acme", "ats": "fake", "board": "acme", "status": "verified"},
@@ -80,3 +87,30 @@ def test_detection_is_cached(tmp_path, monkeypatch):
     runner.run(args)
     assert calls == ["Valens"]                          # second run used the cache
     assert any("Valens → fake" in s for s in sent)
+
+
+def test_messages_survive_a_telegram_outage(tmp_path, monkeypatch):
+    args, sent = setup(tmp_path, monkeypatch)
+    STATE.update(fail=False, jobs=[("1", "Firmware Engineer", "• no experience required")])
+    STATE["tg_down"] = True
+    runner.run(args)                                   # baseline match can't be delivered
+    assert sent == []
+    STATE["tg_down"] = False
+    runner.run(args)                                   # delivered on the next run
+    assert len(sent) == 1 and "Firmware Engineer" in sent[0]
+    runner.run(args)
+    assert len(sent) == 1                              # and only once
+
+
+def test_old_database_is_migrated(tmp_path):
+    import sqlite3
+    from monitor.store import Store
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.executescript("CREATE TABLE jobs (key TEXT PRIMARY KEY, source TEXT, company TEXT, title TEXT,"
+                      " url TEXT, status TEXT, reason TEXT, first_seen INTEGER);"
+                      "INSERT INTO jobs VALUES ('s#1','s','A','T','u','match','',1);")
+    con.commit()
+    con.close()
+    st = Store(str(db))
+    assert st.known_ids("s") == {"1"} and st.pending() == []

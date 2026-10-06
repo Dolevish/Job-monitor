@@ -9,6 +9,10 @@ on:
         description: "Print messages instead of sending to Telegram"
         type: boolean
         default: false
+      reset_state:
+        description: "Start from scratch (new baseline + re-detect all companies)"
+        type: boolean
+        default: false
 
 concurrency:
   group: job-monitor
@@ -33,6 +37,7 @@ jobs:
 
       # The SQLite DB (seen jobs, detections, source health) lives in the Actions cache.
       - name: Restore state
+        if: ${{ !inputs.reset_state }}
         uses: actions/cache/restore@v4
         with:
           path: state

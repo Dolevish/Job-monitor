@@ -24,11 +24,11 @@ companies:
   - {name: Intel,              group: chips,   ats: workday,    board: intel/wd1/External,               status: verified}
   - {name: Marvell,            group: chips,   ats: workday,    board: marvell/wd1/MarvellCareers,       status: verified}
   - {name: Broadcom,           group: chips,   ats: workday,    board: broadcom/wd1/External_Career,     status: verified}
-  - {name: Qualcomm,           group: chips,   ats: workday,    board: qualcomm/wd12/External,           status: verified, note: "inventory also lists qualcomm.eightfold.ai"}
+  - {name: Qualcomm,           group: chips,   careers: "https://careers.qualcomm.com", status: detect, note: "workday qualcomm/wd12/External returned 0 jobs (2026-10-06)"}
   - {name: KLA,                group: chips,   ats: workday,    board: kla/wd1/Search,                   status: verified, note: "dedicated Israel site exists: kla/wd1/Israel"}
   - {name: Applied Materials,  group: chips,   ats: workday,    board: amat/wd1/External,                status: verified}
   - {name: Texas Instruments,  group: chips,   ats: oracle_hcm, board: edbz/CX_1,                        status: verified}
-  - {name: SanDisk,            group: chips,   ats: smartrecruiters, board: sandisk,                     status: verified}
+  - {name: SanDisk,            group: chips,   careers: "https://www.sandisk.com/careers/jobs-at-sandisk", status: detect, note: "smartrecruiters 'sandisk' returned 0 jobs (2026-10-06)"}
   - {name: Astera Labs,        group: chips,   ats: greenhouse, board: asteralabs,                       status: verified}
   - {name: Astera Labs (Early Career), group: chips, ats: greenhouse, board: asteraearlycareer2026, status: verified}
   - {name: Annapurna Labs,     group: chips,   ats: amazon,     board: ISR,                               status: verified}

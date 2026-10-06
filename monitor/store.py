@@ -9,7 +9,7 @@ from .models import Job
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     key TEXT PRIMARY KEY, source TEXT, company TEXT, title TEXT, url TEXT,
-    status TEXT, reason TEXT, first_seen INTEGER
+    status TEXT, reason TEXT, first_seen INTEGER, message TEXT, notified INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source);
 CREATE TABLE IF NOT EXISTS sources (
@@ -28,17 +28,35 @@ class Store:
             os.makedirs(os.path.dirname(path), exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(jobs)")}
+        for col, decl in (("message", "TEXT"), ("notified", "INTEGER DEFAULT 0")):
+            if col not in cols:   # DB created by v0.1
+                self.db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
 
     # --- jobs ---
     def known_ids(self, source: str) -> set[str]:
         rows = self.db.execute("SELECT key FROM jobs WHERE source=?", (source,))
         return {k.split("#", 1)[1] for (k,) in rows}
 
-    def add_job(self, job: Job, status: str, reason: str = "") -> None:
+    def add_job(self, job: Job, status: str, reason: str = "", message: str | None = None) -> None:
+        """message != None queues a Telegram message for this job (sent by send_pending)."""
         self.db.execute(
-            "INSERT OR IGNORE INTO jobs VALUES (?,?,?,?,?,?,?,?)",
-            (job.key, job.source, job.company, job.title, job.url, status, reason, int(time.time())),
+            "INSERT OR IGNORE INTO jobs (key, source, company, title, url, status, reason, "
+            "first_seen, message, notified) VALUES (?,?,?,?,?,?,?,?,?,0)",
+            (job.key, job.source, job.company, job.title, job.url, status, reason,
+             int(time.time()), message),
         )
+
+    # --- outgoing message queue (survives Telegram outages / bad config) ---
+    def pending(self, max_age_days: int = 3) -> list[tuple[str, str]]:
+        cutoff = int(time.time()) - max_age_days * 86400
+        self.db.execute("UPDATE jobs SET notified=-1 WHERE notified=0 AND message IS NOT NULL "
+                        "AND first_seen < ?", (cutoff,))   # too old to be news; drop
+        return self.db.execute("SELECT key, message FROM jobs WHERE notified=0 AND message IS NOT NULL "
+                               "ORDER BY first_seen, rowid").fetchall()
+
+    def mark_notified(self, key: str) -> None:
+        self.db.execute("UPDATE jobs SET notified=1 WHERE key=?", (key,))
 
     # --- sources ---
     def source_seen(self, source: str) -> bool:
